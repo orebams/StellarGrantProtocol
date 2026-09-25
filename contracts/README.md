@@ -243,21 +243,22 @@ cargo fmt --all -- --check
 
 ## 🔐 RBAC Initialization
 
-`initialize(admin, council)` now bootstraps the global `Admin` and `Pauser` roles for the `admin` address. After initialization, role management is done through:
+`initialize(deployer)` bootstraps the `SuperAdmin` role for the `deployer` address. After initialization, role management is done through:
 
-- `grant_role(admin, account, role)`
-- `revoke_role(admin, account, role)`
-- `renounce_role(account, role)`
-- `has_role(account, role)`
-- `get_access_control(account)`
+- `rbac_grant_role(granter, grantee, role, expires_at)`
+- `rbac_revoke_role(revoker, holder, role)`
+- `rbac_renounce_role(holder, role)`
+- `rbac_has_role(address, role)`
+- `rbac_roles_of(address)`
+- `rbac_role_members(role)`
 
 Recommended bootstrap flow:
 
 ```rust
-client.initialize(&admin, &council);
-client.grant_role(&admin, &creator, &stellar_grants::Role::GrantCreator);
-client.grant_role(&admin, &reviewer, &stellar_grants::Role::Reviewer);
-client.grant_role(&admin, &ops, &stellar_grants::Role::Pauser);
+client.initialize(&deployer);
+client.rbac_grant_role(&deployer, &creator, &stellar_grants::Role::GrantCreator, &None);
+client.rbac_grant_role(&deployer, &reviewer, &stellar_grants::Role::Reviewer, &None);
+client.rbac_grant_role(&deployer, &ops, &stellar_grants::Role::Pauser, &None);
 ```
 
 Core grant flows now honor these roles without changing the contract structure:
