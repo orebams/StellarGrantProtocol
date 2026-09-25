@@ -240,3 +240,106 @@ fn get_or_default_metrics(env: &Env) -> ProtocolMetrics {
         last_updated: 0,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{Grant, GrantStatus};
+    use soroban_sdk::{testutils::Address as _, Env, String, Vec};
+
+    fn create_test_grant(env: &Env, grant_id: u64, owner: &Address) -> Grant {
+        let token = Address::generate(env);
+        Grant {
+            id: grant_id,
+            owner: owner.clone(),
+            title: String::from_str(env, "Title"),
+            description: String::from_str(env, "Desc"),
+            token,
+            status: GrantStatus::Active,
+            total_amount: 1000,
+            milestone_amount: 500,
+            reviewers: Vec::new(env),
+            total_milestones: 2,
+            milestones_paid_out: 0,
+            escrow_balance: 1000,
+            funders: Vec::new(env),
+            reason: None,
+            timestamp: env.ledger().timestamp(),
+            require_compliance: None,
+        }
+    }
+
+    #[test]
+    fn test_multi_grant_detail_batch_size_exceeded() {
+        let env = Env::default();
+        let mut ids = Vec::new(&env);
+        for i in 0..11u64 {
+            ids.push_back(i);
+        }
+
+        let res = multi_grant_detail(&env, ids);
+        assert_eq!(res, Err(ContractError::BatchSizeExceeded));
+    }
+
+    #[test]
+    fn test_multi_grant_detail_success_within_limit() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let owner = Address::generate(&env);
+
+        let mut ids = Vec::new(&env);
+        for i in 1..=5u64 {
+            let grant = create_test_grant(&env, i, &owner);
+            Storage::set_grant(&env, i, &grant);
+            ids.push_back(i);
+        }
+
+        let views = multi_grant_detail(&env, ids).unwrap();
+        assert_eq!(views.len(), 5);
+        assert_eq!(views.get(0).unwrap().grant.id, 1);
+        assert_eq!(views.get(4).unwrap().grant.id, 5);
+    }
+
+    #[test]
+    fn test_dashboard_truncation_flag() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        // 1. Untruncated case (0 grants)
+        let dash_empty = dashboard(&env);
+        assert!(!dash_empty.truncated);
+        assert_eq!(dash_empty.active_grants, 0);
+
+        // 2. Truncated case (>1000 active grants in index)
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        for i in 1..=1001u64 {
+            grant_index::on_grant_created(&env, i, &owner, &token, GrantStatus::Active);
+        }
+
+        let dash_full = dashboard(&env);
+        assert!(dash_full.truncated);
+        assert_eq!(dash_full.active_grants, 1000);
+    }
+
+    #[test]
+    fn test_reviewer_dashboard_truncation_flag() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let reviewer = Address::generate(&env);
+
+        // 1. Untruncated case
+        let rev_empty = reviewer_dashboard(&env, &reviewer);
+        assert!(!rev_empty.truncated);
+
+        // 2. Truncated case (>100 active grants in index)
+        let owner = Address::generate(&env);
+        let token = Address::generate(&env);
+        for i in 1..=101u64 {
+            grant_index::on_grant_created(&env, i, &owner, &token, GrantStatus::Active);
+        }
+
+        let rev_full = reviewer_dashboard(&env, &reviewer);
+        assert!(rev_full.truncated);
+    }
+}
